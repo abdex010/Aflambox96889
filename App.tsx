@@ -17,6 +17,21 @@ type LegalModalType = 'privacy' | 'disclaimer' | 'dmca' | null;
 
 const ITEMS_PER_PAGE = 10;
 
+const isValidContentItem = (item: any): item is ContentItem => {
+  return (
+    item &&
+    typeof item.id === 'number' &&
+    typeof item.title === 'string' && item.title.trim() !== '' &&
+    typeof item.year === 'number' &&
+    typeof item.genre === 'string' && item.genre.trim() !== '' &&
+    typeof item.type === 'string' &&
+    typeof item.description === 'string' &&
+    typeof item.posterUrl === 'string' &&
+    typeof item.quality === 'string' &&
+    typeof item.rating === 'number'
+  );
+};
+
 const App: React.FC = () => {
   const [contentItems, setContentItems] = useState<ContentItem[]>(CONTENT_ITEMS); // Make stateful
   const [selectedContentItem, setSelectedContentItem] = useState<ContentItem | null>(null);
@@ -41,38 +56,54 @@ const App: React.FC = () => {
 
   useEffect(() => {
     try {
+      // Watchlist validation
       const storedWatchlist = localStorage.getItem('watchlist');
       if (storedWatchlist) {
         const parsed = JSON.parse(storedWatchlist);
-        if (Array.isArray(parsed)) setWatchlist(parsed);
+        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'number')) {
+          setWatchlist(parsed);
+        }
       }
       
-      const storedRatings = localStorage.getItem('userRatings');
-      if (storedRatings) {
-        const parsed = JSON.parse(storedRatings);
-        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-          setUserRatings(parsed);
+      const validateAndSetObjectMap = (key: string, setter: React.Dispatch<React.SetStateAction<{ [key: number]: number }>>) => {
+        const storedValue = localStorage.getItem(key);
+        if (storedValue) {
+          const parsed = JSON.parse(storedValue);
+          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+            const validMap: { [key: number]: number } = {};
+            for (const itemKey in parsed) {
+              if (Object.prototype.hasOwnProperty.call(parsed, itemKey)) {
+                const numKey = Number(itemKey);
+                const numValue = Number(parsed[itemKey]);
+                if (!isNaN(numKey) && typeof parsed[itemKey] === 'number' && !isNaN(numValue)) {
+                  validMap[numKey] = numValue;
+                }
+              }
+            }
+            setter(validMap);
+          }
         }
-      }
+      };
 
-      const storedProgress = localStorage.getItem('watchProgress');
-      if (storedProgress) {
-        const parsed = JSON.parse(storedProgress);
-        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-          setWatchProgress(parsed);
-        }
-      }
+      validateAndSetObjectMap('userRatings', setUserRatings);
+      validateAndSetObjectMap('watchProgress', setWatchProgress);
 
-      // Allow overriding default content with local data
+      // Content Items deep validation
       const storedContent = localStorage.getItem('contentItems');
       if (storedContent) {
         const parsedContent = JSON.parse(storedContent);
         if (Array.isArray(parsedContent)) {
-          setContentItems(parsedContent);
+          const validContentItems = parsedContent.filter(isValidContentItem);
+          setContentItems(validContentItems);
         }
       }
     } catch (error) {
-      console.error("Failed to parse from localStorage", error);
+      console.error("Failed to parse from localStorage, clearing potentially corrupted data:", error);
+      // Clear corrupted storage to prevent future errors
+      localStorage.removeItem('watchlist');
+      localStorage.removeItem('userRatings');
+      localStorage.removeItem('watchProgress');
+      localStorage.removeItem('contentItems');
     }
   }, []);
   
@@ -201,20 +232,39 @@ const App: React.FC = () => {
         }
         const importedData = JSON.parse(text);
         
-        // Basic validation
-        if (
-          !Array.isArray(importedData.contentItems) ||
-          !Array.isArray(importedData.watchlist) ||
-          typeof importedData.userRatings !== 'object' ||
-          typeof importedData.watchProgress !== 'object'
-        ) {
-          throw new Error('Invalid file format');
-        }
+        // Robust validation
+        const validContent = Array.isArray(importedData.contentItems)
+          ? importedData.contentItems.filter(isValidContentItem)
+          : [];
 
-        setContentItems(importedData.contentItems);
-        setWatchlist(importedData.watchlist);
-        setUserRatings(importedData.userRatings);
-        setWatchProgress(importedData.watchProgress);
+        const validWatchlist = Array.isArray(importedData.watchlist) && importedData.watchlist.every((i: any) => typeof i === 'number')
+          ? importedData.watchlist
+          : [];
+        
+        const parseAndValidateMap = (data: any): { [key: number]: number } => {
+          if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+             const validMap: { [key: number]: number } = {};
+             for (const itemKey in data) {
+               if (Object.prototype.hasOwnProperty.call(data, itemKey)) {
+                 const numKey = Number(itemKey);
+                 const numValue = Number(data[itemKey]);
+                 if (!isNaN(numKey) && typeof data[itemKey] === 'number' && !isNaN(numValue)) {
+                   validMap[numKey] = numValue;
+                 }
+               }
+             }
+             return validMap;
+          }
+          return {};
+        };
+        
+        const validRatings = parseAndValidateMap(importedData.userRatings);
+        const validProgress = parseAndValidateMap(importedData.watchProgress);
+
+        setContentItems(validContent);
+        setWatchlist(validWatchlist);
+        setUserRatings(validRatings);
+        setWatchProgress(validProgress);
         
         // Reset view
         setActiveFilter('All');
@@ -287,14 +337,14 @@ const App: React.FC = () => {
   
   if (!heroContentItem) {
     return (
-      <div className="flex flex-col min-h-screen bg-gray-900 text-white font-sans items-center justify-center">
+      <div className="flex flex-col min-h-screen bg-gray-900 text-white font-sans items-center justify-center p-4 text-center">
         <h1 className="text-2xl font-bold mb-4">No Content Available</h1>
-        <p className="text-gray-400">Import a data file to get started.</p>
+        <p className="text-gray-400 max-w-md">The content library is empty. Please import a valid `aflambox_data.json` file to get started.</p>
         <button 
           onClick={openSettingsModal} 
           className="mt-6 bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-6 rounded-lg transition-transform duration-300 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-red-500"
         >
-          Open Settings
+          Open Settings to Import Data
         </button>
         {isSettingsModalOpen && (
           <SettingsModal
