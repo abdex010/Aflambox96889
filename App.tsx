@@ -42,19 +42,35 @@ const App: React.FC = () => {
   useEffect(() => {
     try {
       const storedWatchlist = localStorage.getItem('watchlist');
-      if (storedWatchlist) setWatchlist(JSON.parse(storedWatchlist));
+      if (storedWatchlist) {
+        const parsed = JSON.parse(storedWatchlist);
+        if (Array.isArray(parsed)) setWatchlist(parsed);
+      }
       
       const storedRatings = localStorage.getItem('userRatings');
-      if (storedRatings) setUserRatings(JSON.parse(storedRatings));
+      if (storedRatings) {
+        const parsed = JSON.parse(storedRatings);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          setUserRatings(parsed);
+        }
+      }
 
       const storedProgress = localStorage.getItem('watchProgress');
-      if (storedProgress) setWatchProgress(JSON.parse(storedProgress));
+      if (storedProgress) {
+        const parsed = JSON.parse(storedProgress);
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          setWatchProgress(parsed);
+        }
+      }
 
       // Allow overriding default content with local data
       const storedContent = localStorage.getItem('contentItems');
-      if(storedContent) setContentItems(JSON.parse(storedContent));
-
-
+      if (storedContent) {
+        const parsedContent = JSON.parse(storedContent);
+        if (Array.isArray(parsedContent)) {
+          setContentItems(parsedContent);
+        }
+      }
     } catch (error) {
       console.error("Failed to parse from localStorage", error);
     }
